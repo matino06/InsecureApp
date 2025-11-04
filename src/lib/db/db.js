@@ -2,7 +2,6 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import { env } from '$env/dynamic/private';
 
-
 const pool = new Pool({
     user: env.PGUSER,
     password: env.PGPASSWORD,
@@ -14,4 +13,7 @@ const pool = new Pool({
     }
 });
 
-export default pool;
+export async function query(text, params) {
+    const res = await pool.query(text, params);
+    return res;
+}

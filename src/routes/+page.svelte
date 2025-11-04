@@ -1,27 +1,45 @@
 <script>
 	import { onMount } from 'svelte';
 	import '../app.css';
-	let messages = [];
-	let users = [];
-	let filter = '';
-	let sqlEnabled = true;
-	let sensitiveEnabled = true;
-	let author = '';
-	let content = '';
-	let newUsername = '';
-	let newPassword = '';
 
-	messages = [
-		{ author: 'Ivan', content: 'Prva test poruka' },
-		{ author: 'Ana', content: 'Druga poruka za test' },
-		{ author: 'Marko', content: 'Treća poruka u listi' }
-	];
+	let messages = $state([]);
+	let users = $state([]);
+	let filter = $state('');
+	let sqlEnabled = $state(true);
+	let sensitiveEnabled = $state(true);
+	let author = $state('');
+	let content = $state('');
+	let newUsername = $state('');
+	let newPassword = $state('');
+
+	async function loadMessages() {
+		const url = filter
+			? `/api/messages?filter=${encodeURIComponent(filter)}&sqlEnabled=${sqlEnabled}`
+			: `/api/messages?sqlEnabled=${sqlEnabled}`;
+		const res = await fetch(url).then((r) => r.json());
+		messages = res.rows || [];
+	}
+
+	async function addMessage() {
+		await fetch('/api/messages', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ author, content })
+		});
+		author = '';
+		content = '';
+		await loadMessages();
+	}
 
 	users = [
-		{ username: 'admin', email: 'admin@example.com', password: 'plaintext123' },
-		{ username: 'user', email: 'user@test.com', password: 'password456' },
-		{ username: 'demo', email: 'demo@demo.com', password: 'test789' }
+		{ username: 'admin', password: 'plaintext123' },
+		{ username: 'user', password: 'password456' },
+		{ username: 'demo', password: 'test789' }
 	];
+
+	$effect(() => {
+		loadMessages();
+	});
 </script>
 
 <div class="mx-auto max-w-2xl space-y-6 p-4">
@@ -45,30 +63,25 @@
 
 	<!-- SQL Injection -->
 	<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-		<h2 class="mb-3 text-lg font-semibold">Messages (SQLi demo)</h2>
+		<h2 class="mb-3 text-lg font-semibold">Poruke</h2>
 
 		<div class="space-y-3">
 			<div>
 				<label class="mb-1 block text-sm font-medium">Filter (tautologija test)</label>
 				<input
 					class="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
-					placeholder="unesi filter"
+					placeholder="npr. ' OR '1'='1"
 					bind:value={filter}
 				/>
+				<p class="mt-1 text-xs text-muted-foreground">
+					Primjer tautologije:&nbsp;
+					<code class="rounded border border-border bg-background/60 px-1 py-0.5 text-sm"
+						>' OR '1'='1</code
+					>
+				</p>
 			</div>
 
-			<div class="flex gap-2">
-				<button
-					class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-				>
-					Pretraži
-				</button>
-				<button
-					class="rounded-md bg-secondary px-3 py-1.5 text-sm text-secondary-foreground hover:opacity-90"
-				>
-					Umetni tautologiju
-				</button>
-			</div>
+			<div class="flex gap-2"></div>
 
 			<hr class="my-3 border-border" />
 
@@ -86,6 +99,7 @@
 				/>
 				<button
 					class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+					on:click={addMessage}
 				>
 					Spremi
 				</button>
@@ -136,7 +150,7 @@
 		<ul class="list-inside list-disc space-y-1 text-sm">
 			{#each users as u}
 				<li>
-					{u.username} — {u.email} — <em class="text-muted-foreground">{u.password}</em>
+					{u.username} — <em class="text-muted-foreground">{u.password}</em>
 				</li>
 			{/each}
 		</ul>
