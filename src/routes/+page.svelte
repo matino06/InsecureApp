@@ -6,11 +6,11 @@
 	let users = $state([]);
 	let filter = $state('');
 	let sqlEnabled = $state(true);
-	let sensitiveEnabled = $state(true);
-	let author = $state('');
+	let csrfProtected = $state(true);
 	let content = $state('');
-	let newUsername = $state('');
-	let newPassword = $state('');
+	let contentNoToken = $state('');
+	let username = $state('');
+	let sessionCsrf = $state('');
 
 	async function loadMessages() {
 		const url = filter
@@ -21,21 +21,48 @@
 	}
 
 	async function addMessage() {
-		await fetch('/api/messages', {
+		const value = content;
+		await fetch(`/api/messages?csrfProtected=${csrfProtected}`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ author, content })
+			body: JSON.stringify({ value }),
+			headers: {
+				'content-type': 'application/json',
+				'x-csrf-token': sessionCsrf
+			}
 		});
-		author = '';
 		content = '';
 		await loadMessages();
 	}
 
-	users = [
-		{ username: 'admin', password: 'plaintext123' },
-		{ username: 'user', password: 'password456' },
-		{ username: 'demo', password: 'test789' }
-	];
+	async function addMessageNoToken() {
+		const value = contentNoToken;
+		await fetch(`/api/messages?csrfProtected=${csrfProtected}`, {
+			method: 'POST',
+			body: JSON.stringify({ value })
+		});
+		contentNoToken = '';
+		await loadMessages();
+	}
+
+	async function login() {
+		const res = await fetch('/api/login', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ username })
+		});
+		const data = await res.json();
+		sessionCsrf = data.csrfToken;
+	}
+
+	async function logout() {
+		await fetch('/api/logout', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({})
+		});
+		sessionCsrf = '';
+		await loadMessages();
+	}
 
 	$effect(() => {
 		loadMessages();
@@ -55,13 +82,39 @@
 			</label>
 
 			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" class="h-4 w-4 accent-primary" bind:checked={sensitiveEnabled} />
-				<span>Sensitive Data Exposure (plaintext lozinke)</span>
+				<input type="checkbox" class="h-4 w-4 accent-primary" bind:checked={csrfProtected} />
+				<span>CSRF</span>
 			</label>
 		</div>
 	</div>
 
-	<!-- SQL Injection -->
+	<div class="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+		<label class="block text-sm font-medium">Login as user</label>
+		<input
+			class="w-full rounded-md border border-input px-2 py-1 text-sm"
+			placeholder="username"
+			bind:value={username}
+		/>
+
+		<button
+			class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+			on:click={login}
+		>
+			Login
+		</button>
+
+		<button
+			class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+			on:click={logout}
+		>
+			Logout
+		</button>
+
+		<p class="text-xs text-muted-foreground">
+			CSRF token: <code>{sessionCsrf || '—'}</code>
+		</p>
+	</div>
+
 	<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 		<h2 class="mb-3 text-lg font-semibold">Poruke</h2>
 
@@ -86,12 +139,7 @@
 			<hr class="my-3 border-border" />
 
 			<div class="space-y-2">
-				<label class="block text-sm font-medium">Dodaj poruku</label>
-				<input
-					class="w-full rounded-md border border-input px-2 py-1 text-sm"
-					placeholder="author"
-					bind:value={author}
-				/>
+				<label class="block text-sm font-medium">Dodaj poruku - šalje token</label>
 				<input
 					class="w-full rounded-md border border-input px-2 py-1 text-sm"
 					placeholder="content"
@@ -103,6 +151,31 @@
 				>
 					Spremi
 				</button>
+			</div>
+			<div class="space-y-2">
+				<label class="block text-sm font-medium">Dodaj poruku - ne šalje token</label>
+				<input
+					class="w-full rounded-md border border-input px-2 py-1 text-sm"
+					placeholder="content"
+					bind:value={contentNoToken}
+				/>
+				<button
+					class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+					on:click={addMessageNoToken}
+				>
+					Spremi
+				</button>
+
+				<p class="mt-2 text-sm text-foreground/90">
+					<strong>Upozorenje:</strong> u ovom obrascu <em>nikako</em> ne šaljemo CSRF token. Ako je
+					<b>CSRF</b> isključen (prekidač iznad), server će odbaciti zahtjev bez tokena; ako je CSRF
+					uključen, poruka će se spremiti iako token nije poslan. Ako si trenutno ulogiran u aplikaciju
+					(imaš aktivnu sesiju / session cookie), server će poruku pripisati tvojem korisničkom računu
+					— što znači da zlonamjerni formular hostan na drugoj stranici može poslati poruku u ime ulogiranog
+					korisnika sve dok je njegova sesija aktivna. Idealno, ova akcija bi se izvodila sa zasebne
+					web-stranice (npr. zlonamjerni CSRF formular ili vanjski cilj napada) koja šalje POST zahtjev
+					prema ovom API-ju — ovdje je to demonstrirano direktno u sučelju radi lakšeg testiranja.
+				</p>
 			</div>
 
 			<div class="mt-4">
@@ -116,43 +189,5 @@
 				</ul>
 			</div>
 		</div>
-	</div>
-
-	<!-- Sensitive Data Exposure -->
-	<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-		<div class="mt-4 space-y-2">
-			<h3 class="font-semibold">Dodaj korisnika</h3>
-			<input
-				class="w-full rounded-md border border-input px-2 py-1 text-sm"
-				placeholder="username"
-				bind:value={newUsername}
-			/>
-			<input
-				class="w-full rounded-md border border-input px-2 py-1 text-sm"
-				placeholder="password"
-				type="password"
-				bind:value={newPassword}
-			/>
-			<button
-				class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-			>
-				Spremi korisnika
-			</button>
-		</div>
-	</div>
-	<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-		<h2 class="mb-3 text-lg font-semibold">Korisnici (Sensitive Data)</h2>
-		<button
-			class="mb-2 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-		>
-			Osvježi korisnike
-		</button>
-		<ul class="list-inside list-disc space-y-1 text-sm">
-			{#each users as u}
-				<li>
-					{u.username} — <em class="text-muted-foreground">{u.password}</em>
-				</li>
-			{/each}
-		</ul>
 	</div>
 </div>
